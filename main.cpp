@@ -14,6 +14,9 @@
 #define REVERSE_STRAND '-'
 #define BOTH_STRANDS '.'
 
+#define SEQFILE_SUFFIX ".seq"
+#define FOLDER_SEPARATOR "/"
+
 #define PWMFINDER_BUFFER_SIZE 1024
 
 using namespace std;
@@ -89,10 +92,11 @@ class PWMHitsFinder
 		int start0;
 		int end1;
 		char strand;
-		Hit(int _score,const string& _ref,int _start0,int _end1,char _strand):score(_score),ref(_ref),start0(_start0),end1(_end1),strand(_strand){}
+		string prefix;
+		Hit(int _score,const string& _ref,int _start0,int _end1,char _strand,string _prefix):score(_score),ref(_ref),start0(_start0),end1(_end1),strand(_strand),prefix(_prefix){}
 		void print(ostream& os) const{
 			string name=ref+":"+StringUtil::str(start0+1)+"-"+StringUtil::str(end1)+":"+strand;
-			os<<ref<<"\t"<<start0<<"\t"<<end1<<"\t"<<name<<"\t"<<score<<"\t"<<strand<<endl;
+			os<<prefix<<ref<<"\t"<<start0<<"\t"<<end1<<"\t"<<name<<"\t"<<score<<"\t"<<strand<<endl;
 		}
 	};
 	
@@ -128,7 +132,7 @@ class PWMHitsFinder
 	
 	}
 	
-	void scanSeq(RandomAccessFile & raf,const string& ref,int gstart0,int gend1,char strand)
+	void scanSeq(RandomAccessFile & raf,const string& ref,int gstart0,int gend1,char strand,string prefix="")
 	
 	
 	{
@@ -165,21 +169,19 @@ class PWMHitsFinder
 		
 		while(fedSize>=k){
 
-			for(int i=0;i<fedSize-k;i++){
-				//cerr<<"operating at "<<i<<endl;
+			for(int i=0;i<fedSize-k+1;i++){
+
 				
 				int absg0=curgstart0+i;
 				curKmer=&buffer_c_str[i];
 			
-				/*if(StringUtil::toLower(buffer.substr(i,17))=="acaccataaatgcattc"){
-					cerr<<"found at "<<(absg0+1)<<endl;	
-				}*/
+
 				
 				if (strand==FORWARD_STRAND || strand==BOTH_STRANDS){
 					//score forward strand here
 					
 					int score=scorer->score(curKmer);
-					Hit thisHit(score,ref,absg0,absg0+k,FORWARD_STRAND);
+					Hit thisHit(score,ref,absg0,absg0+k,FORWARD_STRAND,prefix);
 					this->proposeHit(thisHit);
 				}	
 				if (strand==REVERSE_STRAND || strand==BOTH_STRANDS){
@@ -192,7 +194,7 @@ class PWMHitsFinder
 						cerr<<buffer.substr(i,17)<<" score at 1919526="<<score<<endl;	
 					}*/
 					
-					Hit thisHit(score,ref,absg0,absg0+k,REVERSE_STRAND);
+					Hit thisHit(score,ref,absg0,absg0+k,REVERSE_STRAND,prefix);
 					this->proposeHit(thisHit);
 				}	
 				//cerr<<"done "<<i<<endl;
@@ -214,10 +216,18 @@ class PWMHitsFinder
 	}
 	
 	
+	
+	
 };
 
 
-
+int printUsage(const char*programName){
+	cerr<<"Usage: "<<programName<<" seqFolder searchRangeDef mode motifDef modeParam topN"<<endl;
+	cerr<<"mode=consensus motifDef=consensusString modeParam=mismatch"<<endl;
+	cerr<<"mode=PWM motifDef=PWMRowMatFile modeParam=PWMMinScore"<<endl;
+	
+	return 1;
+}
 
 int main(int argc,char** argv){
 	/*Matrix<double> M;
@@ -264,41 +274,120 @@ int main(int argc,char** argv){
 	
 	return 0;*/
 	
+	const char* programName=argv[0];
 	
+	if(argc<7){
+		return printUsage(programName);
+	}
 	
-	SimpleConsensusKmerScorer SryL("gaAtgcatttatggtgt",2);
-	SimpleConsensusKmerScorer SryLR=SryL.createReverseComplementScorer();
-	SimpleConsensusKmerScorer SryR("gctgggccaacttgtgcct",2);
-	SimpleConsensusKmerScorer SryRR=SryR.createReverseComplementScorer();	
-	/*string s;
-	s="gaatgcatttatggtgt";cout<<s<<" "<<scks.score(s.c_str())<<endl;
-	s="gaatgcacttatggtgt";cout<<s<<" "<<scks.score(s.c_str())<<endl;
-	s="gaatgcacctatggtgt";cout<<s<<" "<<scks.score(s.c_str())<<endl;
-	s="gaatgcacccatggtgt";cout<<s<<" "<<scks.score(s.c_str())<<endl;
+	string seqFolder=argv[1];
+	string searchRangeDef=argv[2];
+	string mode=argv[3];
+	string motifDef=argv[4];
+	int modeParam=StringUtil::atoi(argv[5]);
+	int topN=StringUtil::atoi(argv[6]);
 	
+	KmerScorer* scorer=NULL;
+	KmerScorer* rscorer=NULL;
 	
-	s=reverse_complement("gaatgcatttatggtgt");cout<<s<<" "<<scks.score(s.c_str())<<endl;
-	s=reverse_complement("gaatgcatttatggtgt");cout<<s<<" "<<scksR.score(s.c_str())<<endl;
-	s=reverse_complement("gaatgcacttatggtgt");cout<<s<<" "<<scksR.score(s.c_str())<<endl;
-	s=reverse_complement("gaatgcacctatggtgt");cout<<s<<" "<<scksR.score(s.c_str())<<endl;
-	s=reverse_complement("gaatgcacccatggtgt");cout<<s<<" "<<scksR.score(s.c_str())<<endl;	*/
+	if(mode=="consensus"){
+		scorer=new SimpleConsensusKmerScorer(motifDef,modeParam);
+		rscorer=new SimpleConsensusKmerScorer(SimpleConsensusKmerScorer(motifDef,modeParam).createReverseComplementScorer());	
+	}else{
+		cerr<<"undefined mode "<<mode<<endl;
+		return printUsage(programName);	
+	}
 	
-	RandomAccessFile raf("/lab/jaenisch_albert/genomes/mm9/seq/chrY.seq");
-	//s="gaatgcatttatggtgt";
-	cout<<"SryL"<<endl;
-	PWMHitsFinder SryLFinder(&SryL,&SryLR,20,PWMFINDER_BUFFER_SIZE);
-	SryLFinder.scanSeq(raf,"chrY",0,numeric_limits<int>::max(),BOTH_STRANDS);
-	SryLFinder.printHits(cout);
-	cout<<"-------------------------------------------------------------------------"<<endl;
+	PWMHitsFinder Finder(scorer,rscorer,topN,PWMFINDER_BUFFER_SIZE);
 	
-	//cout<<raf.get(1520,2530)<<endl;
+	vector<string> splits;
+	vector<string> splits2;
 	
-	cout<<"SryR"<<endl;
-	PWMHitsFinder SryRFinder(&SryR,&SryRR,20,PWMFINDER_BUFFER_SIZE);
+	//now start scanning
+	fstream rangeIn(searchRangeDef.c_str());
+	string rangeString;
+	string ref;
+	int start1;
+	int end1;
+	char strand;
+	string curRef;
 	
-	SryRFinder.scanSeq(raf,"chrY",0,numeric_limits<int>::max(),BOTH_STRANDS);
-	SryRFinder.printHits(cout);
+	RandomAccessFile *curRaf=NULL;
 	
-	raf.close();
+	while(rangeIn.good()){
+		rangeString="";
+		rangeIn>>rangeString;
+		if(rangeString.length()>1){
+			cerr<<"processing "<<rangeString<<endl;
+			start1=1;
+			end1=numeric_limits<int>::max();
+			strand=BOTH_STRANDS;
+			
+			StringUtil::split(rangeString,":",splits);
+			
+			//cerr<<splits.size()<<endl;
+			ref=splits[0];
+			//cerr<<ref<<endl;
+			if(ref!=curRef){
+				if(curRaf){
+					curRaf->close();
+					delete curRaf;
+
+				}
+				
+				string filename=seqFolder+FOLDER_SEPARATOR+ref+SEQFILE_SUFFIX;
+				cerr<<"open file "<<filename<<endl;
+				curRaf=new RandomAccessFile(filename);
+				
+				curRef=ref;	
+			}
+			
+			if(splits.size()>=2){
+				string coordinateString=splits[1];
+				StringUtil::split(coordinateString,"-",splits2);
+				if(splits2.size()<2){
+					cerr<<"coordinate string needs start1-end1 or -end1, or start1-"<<endl;
+					continue;	
+				}
+				
+				if(splits2[0].length()>0){
+					start1=StringUtil::atoi(splits2[0]);
+				}
+				
+				if(splits2[1].length()>0){
+					end1=StringUtil::atoi(splits2[1]);	
+				}
+			}
+			
+			if(splits.size()>=3){
+				char strand=splits[2][0];
+				switch(strand){
+					case FORWARD_STRAND:
+					case REVERSE_STRAND:
+					case BOTH_STRANDS:
+					break;
+					default:
+						cerr<<"stand must be + , - or ."<<endl;
+						continue;	
+				}	
+			}
+			
+			Finder.scanSeq(*curRaf,ref,start1-1,end1,strand,rangeString+"\t");
+			//Finder.printHits(cout,rangeString+"\t");
+			
+				
+		}
+	}
+	rangeIn.close();
+	Finder.printHits(cout);
+	
+	if(curRaf){
+		curRaf->close();
+		delete curRaf;	
+	}
+	
+	delete scorer;
+	
+	return 0;
 	
 }
