@@ -500,9 +500,10 @@ int main(int argc,char** argv){
 					end1=StringUtil::atoi(splits2[1]);	
 				}
 			}
+			//char strand;
 			
 			if(splits.size()>=3){
-				char strand=splits[2][0];
+				strand=splits[2][0];
 				switch(strand){
 					case FORWARD_STRAND:
 					case REVERSE_STRAND:
