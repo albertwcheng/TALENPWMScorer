@@ -92,6 +92,15 @@ class Matrix{
 			}
 		}
 		
+		inline const T& itemAt(int i,int j) const{
+			if(smat){
+				return this->smat[i][j];	
+			}
+			else{
+				return this->dmat[i][j];
+			}
+		}		
+		
 		inline int getNumberOfRows() const{
 			if(this->smat){
 				return this->smatRows; 	

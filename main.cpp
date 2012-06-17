@@ -10,6 +10,7 @@
 #include "CppBioClasses/Nucleic.h"
 
 
+
 #define FORWARD_STRAND '+'
 #define REVERSE_STRAND '-'
 #define BOTH_STRANDS '.'
@@ -33,7 +34,7 @@ class PosMatrix
 
 class KmerScorer{
 	public:
-	virtual int score(const char* _kmer) const{return 0;}
+	virtual int score(const char* _kmer,int abortScore) const{return 0;}
 	virtual int getLength() const{return 0;}
 	virtual string toString() const{return "";}
 };
@@ -47,7 +48,7 @@ class SimpleConsensusKmerScorer:public KmerScorer{
 	string toString() const{
 		return consensus+"/"+StringUtil::str(mismatch);	
 	}
-	int score(const char*_kmer) const{
+	int score(const char*_kmer,int abortScore) const{
 		const char*consensus_c_str=consensus.c_str();
 		int consensus_length=consensus.length();
 		int mismatches=0;
@@ -69,15 +70,126 @@ class SimpleConsensusKmerScorer:public KmerScorer{
 		return consensus.length();
 	}
 	
-	SimpleConsensusKmerScorer createReverseComplementScorer() const;
+	SimpleConsensusKmerScorer* createReverseComplementScorer() const;
 	
 };
 
 
-SimpleConsensusKmerScorer SimpleConsensusKmerScorer::createReverseComplementScorer() const
+SimpleConsensusKmerScorer* SimpleConsensusKmerScorer::createReverseComplementScorer() const
 {
-	return SimpleConsensusKmerScorer(reverse_complement(this->consensus),this->mismatch);	
+	SimpleConsensusKmerScorer* newScorer=new SimpleConsensusKmerScorer(reverse_complement(this->consensus),this->mismatch);	
+	return newScorer;
 }
+
+
+class SimplePWMKmerScorer:public KmerScorer
+{
+	
+	
+	public:
+	int minScore;
+	Matrix<int> matData;
+	int consensusBase;
+	
+	SimplePWMKmerScorer(const string& _filename, int _minScore):minScore(_minScore)
+	{
+		if(_filename.length()>0)
+		{	
+
+			StringToInt s2i;
+			consensusBase=0;
+			//cerr<<"Reading file "<<_filename<<endl;
+			matData.readFile(_filename,s2i); //else init empty.
+			//cerr<<"Done reading"<<endl;
+			//matData.print(cerr);
+			for(int i=0;i<matData.getNumberOfRows();i++){
+				int maxI=numeric_limits<int>::min();
+				for(int j=0;j<4;j++){
+					int thisItem=matData.itemAt(i,j);
+					if(thisItem>maxI){
+						maxI=thisItem;	
+					}
+				}
+				
+				consensusBase+=maxI;
+			}
+			
+		}
+		
+	}
+	string toString() const{
+		return "PWM";	
+	}
+	int score(const char*_kmer,int abortScore) const{
+		
+		int consensus_length=this->getLength();
+		//int gross_score=0;
+		int currentScore=-this->consensusBase;
+		//A:0 C:1 G:2 T:3
+		
+		for(int i=0;i<consensus_length;i++){
+			switch (toupper(_kmer[i]))
+			{
+				case 'A':
+					currentScore+=matData.itemAt(i,0);
+					break;
+				case 'C':
+					currentScore+=matData.itemAt(i,1);
+					break;
+				case 'G':
+					currentScore+=matData.itemAt(i,2);
+					break;
+				case 'T':
+					currentScore+=matData.itemAt(i,3);
+					break;
+				default:
+					//not ACGT, return this as invalid
+					return numeric_limits<int>::min();	
+			}
+	
+			
+			if (currentScore<minScore || currentScore<abortScore){ //this sequence or sequence with this prefix already has a lower score than the min score or the lowest score on record of the topN
+				return numeric_limits<int>::min(); //abort
+			}	
+		}
+		
+		return currentScore;
+		
+		
+	}
+	
+	int getLength() const
+	{
+		return matData.getNumberOfRows();
+	}
+	
+	SimplePWMKmerScorer* createReverseComplementScorer() const;
+	
+};
+
+
+SimplePWMKmerScorer* SimplePWMKmerScorer::createReverseComplementScorer() const
+{	
+	//cerr<<"copy"<<endl;
+	SimplePWMKmerScorer* newScorer=new SimplePWMKmerScorer(*this); //create a new matrix
+	//cerr<<"copied "<<newScorer->matData.getNumberOfRows()<<"x"<<newScorer->matData.getNumberOfCols()<<endl;
+	
+	//rPWM[i,j]=[k-i,4-j]
+	int k=this->getLength();
+	for(int i=0;i<k;i++){
+		for(int j=0;j<4;j++){
+			//cerr<<"set "<<i<<" "<<j<<endl;
+			newScorer->matData.itemAt(i,j)=this->matData.itemAt(k-i-1,4-j-1);	
+		}	
+	}
+	
+	//cerr<<"new done"<<endl;
+	
+	return newScorer;
+		
+}
+
+
 
 class PWMHitsFinder
 {
@@ -105,8 +217,14 @@ class PWMHitsFinder
 	KmerScorer* reverseScorer;
 	int bufferSize;
 	multimap<int,Hit,greater<int> > hits;
+	int abortScore;
 	
-	PWMHitsFinder(KmerScorer* _scorer,KmerScorer* _reverseScorer,int _topN,int _bufferSize):scorer(_scorer),reverseScorer(_reverseScorer),topN(_topN),bufferSize(_bufferSize){}
+	PWMHitsFinder(KmerScorer* _scorer,KmerScorer* _reverseScorer,int _topN,int _bufferSize):scorer(_scorer),reverseScorer(_reverseScorer),topN(_topN),bufferSize(_bufferSize)
+
+	{
+		
+		abortScore=numeric_limits<int>::min(); // no abortion at the very begining
+	}
 	
 	void printHits(ostream& os){
 		for(multimap<int,Hit,greater<int> >::iterator i=hits.begin();i!=hits.end();i++){
@@ -127,6 +245,9 @@ class PWMHitsFinder
 				hits.erase((++hits.rbegin()).base()); //remove the (topN+1)-ranked hit 			
 				//cerr<<"erase ok"<<endl;	
 			}
+			
+			this->abortScore=hits.rbegin()->second.score; //save the lowest score in the rank so that we can save time on scoring if scoring drops off.
+			
 		}
 		
 	
@@ -180,14 +301,14 @@ class PWMHitsFinder
 				if (strand==FORWARD_STRAND || strand==BOTH_STRANDS){
 					//score forward strand here
 					
-					int score=scorer->score(curKmer);
+					int score=scorer->score(curKmer,this->abortScore);
 					Hit thisHit(score,ref,absg0,absg0+k,FORWARD_STRAND,prefix);
 					this->proposeHit(thisHit);
 				}	
 				if (strand==REVERSE_STRAND || strand==BOTH_STRANDS){
 					//score reverse strand here
 					
-					int score=reverseScorer->score(curKmer);
+					int score=reverseScorer->score(curKmer,this->abortScore);
 					
 					/*if (absg0==1919525){
 						cerr<<"reverseScorer:"<<reverseScorer->toString()<<endl;
@@ -291,9 +412,30 @@ int main(int argc,char** argv){
 	KmerScorer* rscorer=NULL;
 	
 	if(mode=="consensus"){
-		scorer=new SimpleConsensusKmerScorer(motifDef,modeParam);
-		rscorer=new SimpleConsensusKmerScorer(SimpleConsensusKmerScorer(motifDef,modeParam).createReverseComplementScorer());	
-	}else{
+		SimpleConsensusKmerScorer* scks=new SimpleConsensusKmerScorer(motifDef,modeParam);
+		scorer=scks;
+		rscorer=scks->createReverseComplementScorer();	
+	}else if(mode=="PWM")
+	{	
+		if (modeParam==0){
+			modeParam=numeric_limits<int>::min();
+		}
+		
+		cerr<<"reading matrix from "<<motifDef<<endl;
+		SimplePWMKmerScorer*spks=new SimplePWMKmerScorer(motifDef,modeParam);
+		cerr<<"Done reading"<<endl;
+		spks->matData.print(cerr);
+		cerr<<"consensus base:"<<spks->consensusBase<<endl;
+		scorer=spks;
+		
+		cerr<<"create reverse complement matrix"<<endl;
+		SimplePWMKmerScorer*rspks=spks->createReverseComplementScorer();
+		rspks->matData.print(cerr);
+		rscorer=rspks;
+		
+		//cerr<<"done"<<endl;
+	}
+	else{
 		cerr<<"undefined mode "<<mode<<endl;
 		return printUsage(programName);	
 	}

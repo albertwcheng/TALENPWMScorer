@@ -13,6 +13,20 @@ def oppostrand(s):
 		return "-"
 	elif s=="-":
 		return "+"
+
+def getPWMLength(filename):
+	fil=open(filename)
+	length=0
+	for lin in fil:
+		lin=lin.rstrip("\r\n")
+		if len(lin)<1 or lin[0]=='#':
+			continue
+		
+		if len(lin.split("\t"))==4:
+			length+=1
+	fil.close()
+	
+	return length
 	
 if __name__=='__main__':
 	programName=argv[0]
@@ -42,10 +56,14 @@ if __name__=='__main__':
 	
 	if mode1=="consensus":
 		w1=len(motifDef1)
-	
+	elif mode1=="PWM":
+		w1=getPWMLength(motifDef1)
+		
 	if mode2=="consensus":
 		w2=len(motifDef2)
-	
+	elif mode2=="PWM":
+		w2=getPWMLength(motifDef2)
+		
 	filesInSeqDir=listdir(seqDir)
 	
 	refs=[]
@@ -116,14 +134,27 @@ if __name__=='__main__':
 	print >> stderr,command
 	system(command)
 	
-	PairedHitOut=outDir+"/paired_hits.txt"
+	PairedHitOut=outDir+"/paired_hits.00"
 	PairedHitStderr=outDir+"/paired_hits.stderr"
 	command="joinu.py -1 8 -2 1 %s %s > %s 2> %s" %(TALEN1foundOutWithChrom2,TALEN2foundOut,PairedHitOut,PairedHitStderr)
 	print >> stderr,command
 	system(command)
 	
-	
-	PairedHitOutSimp=outDir+"/paired_hits_simp.txt"
-	command="cuta.py -f5,12 %s > %s" %(PairedHitOut,PairedHitOutSimp)
+	PairedHitOutWithCombinedScore=outDir+"/paired_hits.txt"
+	PairedHitOutWithCombinedScoreSorted=outDir+"/paired_hits_sortedCS.txt"
+	command='awk -v FS="\t" -v OFS="\t" \'{$15=$6+$13;print}\' '+ PairedHitOut +' > '+PairedHitOutWithCombinedScore
 	print >> stderr,command
 	system(command)
+	
+	command="sort -g -r -k15,15 %s > %s" %( PairedHitOutWithCombinedScore,PairedHitOutWithCombinedScoreSorted)
+	print >> stderr,command
+	system(command)
+	
+	PairedHitOutSimp=outDir+"/paired_hits_simp.txt"
+	command="cuta.py -f5,12,6,13,15 %s > %s" %(PairedHitOutWithCombinedScoreSorted,PairedHitOutSimp)
+	print >> stderr,command
+	system(command)	
+	#command="sort -g -r -k15,15 %s > %s" %( PairedHitOutSimp,PairedHitOutSimp)
+	#print >> stderr,command
+	#system(command)
+		
