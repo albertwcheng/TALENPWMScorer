@@ -78,6 +78,20 @@ RandomAccessFile::RandomAccessFile(string filename, int bufsize, char *_rafbuf) 
 		externBuffer=false;
 		rafbuf=new char[rafbuflen];
 	}
+	
+	fileSize=getFileSize();
+
+}
+
+int RandomAccessFile::getFileSize()
+{
+seekg (0, ios::end);
+
+int length = tellg();
+
+seekg (0, ios::beg);
+
+return length;
 
 }
 
@@ -101,7 +115,10 @@ void RandomAccessFile::transfer(ostream&os,int start,int endEx)
 		start=0;
 
 	if(endEx<0)
-		endEx=INT_MAX;
+		endEx=fileSize;//INT_MAX; //was INT_MAX
+		
+	endEx=MIN(endEx,fileSize); //to protect the stream
+	
 
 	int lenRead=0;
 	int lenToRead;
