@@ -1,0 +1,9 @@
+[submodule "CppUtilClasses"]
+	path = CppUtilClasses
+	url = https://github.com/albertwcheng/CppUtilClasses
+[submodule "bedSeq"]
+	path = bedSeq
+	url = https://github.com/albertwcheng/bedSeq
+[submodule "CppBioClasses"]
+	path = CppBioClasses
+	url = https://github.com/albertwcheng/CppBioClasses
