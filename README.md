@@ -11,6 +11,7 @@ Build
 
     git clone https://github.com/andynu/TALENPWMScorer.git
     git submodule init
+    git submodule update
     ./make.sh
 
 Run
